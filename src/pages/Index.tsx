@@ -2,15 +2,14 @@ import { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Icon from '@/components/ui/icon';
 import { useToast } from '@/hooks/use-toast';
 
 const ROOMS = [
-  { id: 'orange', name: 'Оранжевое настроение', price: 400, color: 'from-orange-500 to-orange-600' },
-  { id: 'salsa', name: 'Salsa', price: 500, color: 'from-pink-500 to-rose-600' },
-  { id: 'airlight', name: 'Air&Light', price: 800, color: 'from-cyan-400 to-blue-500' }
+  { id: 'orange', name: 'Оранжевое настроение', price: 200, color: 'from-orange-500 to-orange-600' },
+  { id: 'salsa', name: 'Salsa', price: 250, color: 'from-pink-500 to-rose-600' },
+  { id: 'airlight', name: 'Air&Light', price: 400, color: 'from-cyan-400 to-blue-500' }
 ];
 
 const TIME_SLOTS = [
@@ -29,6 +28,11 @@ interface Booking {
   time_slot: string;
 }
 
+interface SelectedSlot {
+  date: string;
+  time: string;
+}
+
 const Index = () => {
   const [selectedRoom, setSelectedRoom] = useState(ROOMS[0]);
   const [bookings, setBookings] = useState<Booking[]>([]);
@@ -42,7 +46,9 @@ const Index = () => {
     return monday;
   });
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [selectedSlot, setSelectedSlot] = useState<{ date: string; time: string } | null>(null);
+  const [selectedSlots, setSelectedSlots] = useState<SelectedSlot[]>([]);
+  const [isSelecting, setIsSelecting] = useState(false);
+  const [selectionStart, setSelectionStart] = useState<SelectedSlot | null>(null);
   const { toast } = useToast();
 
   const weekDates = Array.from({ length: 7 }, (_, i) => {
@@ -79,40 +85,91 @@ const Index = () => {
     );
   };
 
-  const handleSlotClick = (date: Date, time: string) => {
-    if (isBooked(date, time)) return;
+  const isSlotSelected = (date: Date, time: string) => {
     const dateStr = date.toISOString().split('T')[0];
-    setSelectedSlot({ date: dateStr, time });
-    setIsDialogOpen(true);
+    return selectedSlots.some(slot => slot.date === dateStr && slot.time === time);
   };
 
-  const handleBooking = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    if (!selectedSlot) return;
+  const handleMouseDown = (date: Date, time: string) => {
+    if (isBooked(date, time)) return;
+    const dateStr = date.toISOString().split('T')[0];
+    setIsSelecting(true);
+    setSelectionStart({ date: dateStr, time });
+    setSelectedSlots([{ date: dateStr, time }]);
+  };
+
+  const handleMouseEnter = (date: Date, time: string) => {
+    if (!isSelecting || !selectionStart) return;
+    const dateStr = date.toISOString().split('T')[0];
+    
+    if (dateStr !== selectionStart.date) return;
+
+    const startIdx = TIME_SLOTS.indexOf(selectionStart.time);
+    const endIdx = TIME_SLOTS.indexOf(time);
+    
+    const minIdx = Math.min(startIdx, endIdx);
+    const maxIdx = Math.max(startIdx, endIdx);
+    
+    const newSelection: SelectedSlot[] = [];
+    for (let i = minIdx; i <= maxIdx; i++) {
+      const slotDate = new Date(selectionStart.date);
+      if (!isBooked(slotDate, TIME_SLOTS[i])) {
+        newSelection.push({ date: selectionStart.date, time: TIME_SLOTS[i] });
+      }
+    }
+    
+    setSelectedSlots(newSelection);
+  };
+
+  const handleMouseUp = () => {
+    if (isSelecting && selectedSlots.length > 0) {
+      setIsDialogOpen(true);
+    }
+    setIsSelecting(false);
+  };
+
+  useEffect(() => {
+    const handleGlobalMouseUp = () => {
+      if (isSelecting) {
+        handleMouseUp();
+      }
+    };
+    
+    document.addEventListener('mouseup', handleGlobalMouseUp);
+    return () => document.removeEventListener('mouseup', handleGlobalMouseUp);
+  }, [isSelecting, selectedSlots]);
+
+  const handleBooking = async () => {
+    if (selectedSlots.length === 0) return;
 
     try {
-      const response = await fetch('https://functions.poehali.dev/9740880a-0495-4c81-8d54-e9128221b101', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          room_name: selectedRoom.name,
-          date: selectedSlot.date,
-          time_slot: selectedSlot.time
+      const promises = selectedSlots.map(slot =>
+        fetch('https://functions.poehali.dev/9740880a-0495-4c81-8d54-e9128221b101', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            room_name: selectedRoom.name,
+            date: slot.date,
+            time_slot: slot.time
+          })
         })
-      });
+      );
 
-      if (response.ok) {
+      const results = await Promise.all(promises);
+      const allSuccess = results.every(r => r.ok);
+
+      if (allSuccess) {
         toast({
           title: 'Успешно!',
-          description: 'Время забронировано'
+          description: `Забронировано ${selectedSlots.length} слотов`
         });
         setIsDialogOpen(false);
+        setSelectedSlots([]);
         fetchBookings();
       } else {
-        const error = await response.json();
         toast({
           title: 'Ошибка',
-          description: error.detail || 'Не удалось забронировать',
+          description: 'Не удалось забронировать некоторые слоты',
           variant: 'destructive'
         });
       }
@@ -139,6 +196,22 @@ const Index = () => {
 
   const formatDate = (date: Date) => {
     return `${date.getDate()} ${date.toLocaleString('ru', { month: 'short' })}`;
+  };
+
+  const calculateTotal = () => {
+    return selectedSlots.length * selectedRoom.price;
+  };
+
+  const formatTimeRange = () => {
+    if (selectedSlots.length === 0) return '';
+    const sorted = [...selectedSlots].sort((a, b) => a.time.localeCompare(b.time));
+    const start = sorted[0].time;
+    const lastSlot = sorted[sorted.length - 1].time;
+    const [hours, minutes] = lastSlot.split(':').map(Number);
+    const endMinutes = minutes + 30;
+    const endHours = endMinutes >= 60 ? hours + 1 : hours;
+    const end = `${String(endHours).padStart(2, '0')}:${String(endMinutes % 60).padStart(2, '0')}`;
+    return `${start} - ${end}`;
   };
 
   return (
@@ -171,10 +244,15 @@ const Index = () => {
             >
               <div className="flex flex-col items-start">
                 <span>{room.name}</span>
-                <span className="text-sm font-normal opacity-80">{room.price}₽/час</span>
+                <span className="text-sm font-normal opacity-80">{room.price}₽ / 30 мин</span>
               </div>
             </Button>
           ))}
+        </div>
+
+        <div className="mb-4 text-sm text-purple-300 flex items-center gap-2">
+          <Icon name="Info" size={16} />
+          <span>Зажмите и тяните мышку для выбора нескольких слотов подряд</span>
         </div>
 
         <Card className="bg-white/5 backdrop-blur-md border-white/10 overflow-hidden animate-fade-in">
@@ -191,7 +269,7 @@ const Index = () => {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
+            <table className="w-full border-collapse select-none">
               <thead>
                 <tr className="bg-white/5">
                   <th className="sticky left-0 z-20 bg-white/5 backdrop-blur-sm px-4 py-3 text-left border-r border-white/10 min-w-[100px]">
@@ -208,27 +286,31 @@ const Index = () => {
               <tbody>
                 {TIME_SLOTS.map((time) => (
                   <tr key={time} className="border-t border-white/10 hover:bg-white/5 transition-colors">
-                    <td className="sticky left-0 z-10 bg-card/80 backdrop-blur-sm px-4 py-3 font-medium border-r border-white/10">
+                    <td className="sticky left-0 z-10 bg-card/80 backdrop-blur-sm px-4 py-2 font-medium border-r border-white/10 text-sm">
                       {time}
                     </td>
                     {weekDates.map((date, dateIdx) => {
                       const booked = isBooked(date, time);
+                      const selected = isSlotSelected(date, time);
                       return (
                         <td
                           key={dateIdx}
-                          onClick={() => handleSlotClick(date, time)}
-                          className={`px-2 py-3 border-r border-white/10 cursor-pointer transition-all duration-200 ${
+                          onMouseDown={() => handleMouseDown(date, time)}
+                          onMouseEnter={() => handleMouseEnter(date, time)}
+                          className={`px-2 py-2 border-r border-white/10 cursor-pointer transition-all duration-150 ${
                             booked
                               ? 'bg-green-500/30 cursor-not-allowed'
-                              : 'hover:bg-purple-500/20 hover:scale-105'
+                              : selected
+                              ? 'bg-purple-500/50 scale-95'
+                              : 'hover:bg-purple-500/20'
                           }`}
                         >
-                          <div className="h-12 flex items-center justify-center">
+                          <div className="h-8 flex items-center justify-center">
                             {booked ? (
-                              <Icon name="Check" size={20} className="text-green-400" />
-                            ) : (
-                              <Icon name="Plus" size={20} className="opacity-0 group-hover:opacity-100 transition-opacity" />
-                            )}
+                              <Icon name="Check" size={18} className="text-green-400" />
+                            ) : selected ? (
+                              <Icon name="Square" size={18} className="text-purple-300" />
+                            ) : null}
                           </div>
                         </td>
                       );
@@ -246,41 +328,64 @@ const Index = () => {
             <span>Забронировано</span>
           </div>
           <div className="flex items-center gap-2">
+            <div className="w-6 h-6 bg-purple-500/50 rounded border border-purple-500/70"></div>
+            <span>Выбрано</span>
+          </div>
+          <div className="flex items-center gap-2">
             <div className="w-6 h-6 bg-white/10 rounded border border-white/20"></div>
             <span>Свободно</span>
           </div>
         </div>
       </div>
 
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+      <Dialog open={isDialogOpen} onOpenChange={(open) => {
+        setIsDialogOpen(open);
+        if (!open) setSelectedSlots([]);
+      }}>
         <DialogContent className="bg-card/95 backdrop-blur-md border-white/20">
           <DialogHeader>
             <DialogTitle className="text-2xl font-bold bg-gradient-to-r from-purple-400 to-blue-400 bg-clip-text text-transparent">
-              Бронирование
+              Подтверждение бронирования
             </DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleBooking} className="space-y-4">
+          <div className="space-y-4">
             <div className="space-y-2">
               <Label>Зал</Label>
               <div className={`px-4 py-3 rounded-lg bg-gradient-to-r ${selectedRoom.color} font-semibold`}>
-                {selectedRoom.name} — {selectedRoom.price}₽/час
+                {selectedRoom.name}
               </div>
             </div>
             <div className="space-y-2">
-              <Label>Дата и время</Label>
-              <Input
-                value={selectedSlot ? `${selectedSlot.date} в ${selectedSlot.time}` : ''}
-                disabled
-                className="bg-white/10 border-white/20"
-              />
+              <Label>Дата</Label>
+              <div className="px-4 py-3 rounded-lg bg-white/10 border border-white/20">
+                {selectedSlots.length > 0 && new Date(selectedSlots[0].date).toLocaleDateString('ru')}
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Время</Label>
+              <div className="px-4 py-3 rounded-lg bg-white/10 border border-white/20">
+                {formatTimeRange()}
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Длительность</Label>
+              <div className="px-4 py-3 rounded-lg bg-white/10 border border-white/20">
+                {selectedSlots.length * 30} минут ({selectedSlots.length} слотов)
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Итого</Label>
+              <div className="px-4 py-3 rounded-lg bg-gradient-to-r from-purple-500/30 to-blue-500/30 border border-purple-500/50 text-2xl font-bold text-center">
+                {calculateTotal()}₽
+              </div>
             </div>
             <Button
-              type="submit"
+              onClick={handleBooking}
               className="w-full bg-gradient-to-r from-purple-500 to-blue-500 hover:from-purple-600 hover:to-blue-600 font-semibold py-6 text-lg"
             >
-              Подтвердить бронирование
+              Забронировать за {calculateTotal()}₽
             </Button>
-          </form>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
