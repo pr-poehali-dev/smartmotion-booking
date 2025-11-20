@@ -40,7 +40,7 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     try:
         if method == 'GET':
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute("SELECT room_name, date::text, time_slot::text FROM bookings ORDER BY date, time_slot")
+                cur.execute("SELECT room_name, date::text, time_slot::text FROM t_p27962896_smartmotion_booking.bookings ORDER BY date, time_slot")
                 bookings = cur.fetchall()
                 return {
                     'statusCode': 200,
@@ -54,19 +54,21 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             room_name = body_data.get('room_name')
             date = body_data.get('date')
             time_slot = body_data.get('time_slot')
+            first_name = body_data.get('first_name')
+            last_name = body_data.get('last_name')
             
-            if not all([room_name, date, time_slot]):
+            if not all([room_name, date, time_slot, first_name, last_name]):
                 return {
                     'statusCode': 400,
                     'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'},
-                    'body': json.dumps({'detail': 'Все поля обязательны'}),
+                    'body': json.dumps({'detail': 'Все поля обязательны: room_name, date, time_slot, first_name, last_name'}),
                     'isBase64Encoded': False
                 }
             
             with conn.cursor() as cur:
                 cur.execute(
-                    "INSERT INTO bookings (room_name, date, time_slot) VALUES (%s, %s, %s)",
-                    (room_name, date, time_slot)
+                    "INSERT INTO t_p27962896_smartmotion_booking.bookings (room_name, date, time_slot, first_name, last_name) VALUES (%s, %s, %s, %s, %s)",
+                    (room_name, date, time_slot, first_name, last_name)
                 )
                 conn.commit()
             

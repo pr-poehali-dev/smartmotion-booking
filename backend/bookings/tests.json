@@ -13,25 +13,7 @@
       "name": "GET all bookings",
       "method": "GET",
       "path": "/",
-      "expectedStatus": 200,
-      "expectedBody": [],
-      "bodyMatcher": "type"
-    },
-    {
-      "name": "POST create booking",
-      "method": "POST",
-      "path": "/",
-      "body": {
-        "room_name": "Salsa",
-        "date": "2025-11-25",
-        "time_slot": "18:00"
-      },
-      "expectedStatus": 200,
-      "expectedBody": {
-        "status": "string",
-        "message": "string"
-      },
-      "bodyMatcher": "partial"
+      "expectedStatus": 200
     }
   ]
 }

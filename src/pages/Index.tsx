@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Icon from '@/components/ui/icon';
 import { useToast } from '@/hooks/use-toast';
@@ -49,6 +50,8 @@ const Index = () => {
   const [selectedSlots, setSelectedSlots] = useState<SelectedSlot[]>([]);
   const [isSelecting, setIsSelecting] = useState(false);
   const [selectionStart, setSelectionStart] = useState<SelectedSlot | null>(null);
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const { toast } = useToast();
 
   const weekDates = Array.from({ length: 7 }, (_, i) => {
@@ -139,8 +142,17 @@ const Index = () => {
     return () => document.removeEventListener('mouseup', handleGlobalMouseUp);
   }, [isSelecting, selectedSlots]);
 
-  const handleBooking = async () => {
+  const handleBooking = async (e: React.FormEvent) => {
+    e.preventDefault();
     if (selectedSlots.length === 0) return;
+    if (!firstName.trim() || !lastName.trim()) {
+      toast({
+        title: 'Ошибка',
+        description: 'Заполните имя и фамилию',
+        variant: 'destructive'
+      });
+      return;
+    }
 
     try {
       const promises = selectedSlots.map(slot =>
@@ -150,7 +162,9 @@ const Index = () => {
           body: JSON.stringify({
             room_name: selectedRoom.name,
             date: slot.date,
-            time_slot: slot.time
+            time_slot: slot.time,
+            first_name: firstName.trim(),
+            last_name: lastName.trim()
           })
         })
       );
@@ -165,6 +179,8 @@ const Index = () => {
         });
         setIsDialogOpen(false);
         setSelectedSlots([]);
+        setFirstName('');
+        setLastName('');
         fetchBookings();
       } else {
         toast({
@@ -340,7 +356,11 @@ const Index = () => {
 
       <Dialog open={isDialogOpen} onOpenChange={(open) => {
         setIsDialogOpen(open);
-        if (!open) setSelectedSlots([]);
+        if (!open) {
+          setSelectedSlots([]);
+          setFirstName('');
+          setLastName('');
+        }
       }}>
         <DialogContent className="bg-card/95 backdrop-blur-md border-white/20">
           <DialogHeader>
@@ -348,7 +368,29 @@ const Index = () => {
               Подтверждение бронирования
             </DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
+          <form onSubmit={handleBooking} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="firstName">Имя *</Label>
+              <Input
+                id="firstName"
+                value={firstName}
+                onChange={(e) => setFirstName(e.target.value)}
+                placeholder="Введите имя"
+                required
+                className="bg-white/10 border-white/20 text-white placeholder:text-white/50"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="lastName">Фамилия *</Label>
+              <Input
+                id="lastName"
+                value={lastName}
+                onChange={(e) => setLastName(e.target.value)}
+                placeholder="Введите фамилию"
+                required
+                className="bg-white/10 border-white/20 text-white placeholder:text-white/50"
+              />
+            </div>
             <div className="space-y-2">
               <Label>Зал</Label>
               <div className={`px-4 py-3 rounded-lg bg-gradient-to-r ${selectedRoom.color} font-semibold`}>
@@ -380,12 +422,12 @@ const Index = () => {
               </div>
             </div>
             <Button
-              onClick={handleBooking}
+              type="submit"
               className="w-full bg-gradient-to-r from-purple-500 to-blue-500 hover:from-purple-600 hover:to-blue-600 font-semibold py-6 text-lg"
             >
               Забронировать за {calculateTotal()}₽
             </Button>
-          </div>
+          </form>
         </DialogContent>
       </Dialog>
     </div>
